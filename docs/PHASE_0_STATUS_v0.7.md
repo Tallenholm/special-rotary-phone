@@ -52,28 +52,16 @@ Neutralization is diagnostic rather than an automatic kill criterion. If a signa
 
 A gate is another model. It must be validated inside the same research lifecycle and compared against the ungated model. Acceptance is multi-objective and predeclared: return/CAGR, Sharpe, Sortino, Calmar, maximum drawdown, expected shortfall/tail loss, turnover, and exposure stability may all matter depending on the gate's stated purpose.
 
-## Current research frontier
+## Current project frontier
 
-**Analyst Expectations & Earnings Revisions**
+**SEC EDGAR filings + company-reported event alpha**
 
-Priority subtopics:
+The current implementation work is the A0/free-core EDGAR path: accession-level ingestion, immutable raw storage, conservative filing-availability timestamps, deterministic 10-K/10-Q section extraction, and year-over-year filing-section delta features.
 
-- EPS estimate revision magnitude
-- Revision breadth
-- Forecast dispersion and changes in dispersion
-- Revision staleness
-- Speed of analyst response after earnings/guidance
-- Recommendation changes vs. earnings-estimate changes
-- Positive/negative revision asymmetry
-- Analyst disagreement
-- Analyst influence / historical accuracy
-- Distance from consensus
-- Revision clustering
-- Bellwether / peer propagation
-- Interaction with earnings surprise, guidance, PEAD, and immediate price reaction
+The prior **Analyst Expectations & Earnings Revisions** frontier remains a high-priority research branch, but rigorous historical testing is parked behind legitimate point-in-time analyst-data access. Public/prospective research must not reconstruct or scrape unversioned web consensus and call it point-in-time clean.
 
-Historical point-in-time analyst consensus is a commercial-data branch. Public/prospective research must not reconstruct or scrape unversioned web consensus and call it point-in-time clean.
+No enterprise analyst-data purchase is required to continue the current EDGAR implementation work. The analyst branch can resume when a suitable historical PIT source is available at a justified cost.
 
 ## Status
 
-Phase-0 specification is closed for currently known vulnerabilities. Any newly discovered material flaw reopens the gate. No live implementation begins until the relevant data and validation controls are actually implemented and verified.
+Phase-0 specification is closed for currently known vulnerabilities. Any newly discovered material flaw reopens the gate. Research-lab implementation may proceed only where the corresponding data and validation controls are implemented and verified. No live brokerage connection or automated real-money execution is authorized.
