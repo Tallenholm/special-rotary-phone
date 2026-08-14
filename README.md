@@ -6,7 +6,7 @@ Research-first systematic equities project. No live trading system is authorized
 
 - **Phase-0 Master Dossier:** v0.7 — Feasibility Closed
 - **Research cutoff:** August 14, 2026
-- **Repository status:** synced to the v0.7 specification
+- **Repository status:** synced to the v0.7 research specification summary
 - **Current research frontier:** Analyst Expectations & Earnings Revisions
 
 ## Research tracks
@@ -26,9 +26,10 @@ Research-first systematic equities project. No live trading system is authorized
 7. Failed hypotheses remain in the Edge Graveyard.
 8. Sealed historical tests are one-use confirmatory evidence per research generation; prospective data outrank recycled holdouts.
 
-## Files
+## Repository file
 
-- `docs/Equities_Research_Phase_0_Master_Dossier_v0.7_Feasibility_Closed.docx` — current full Phase-0 master dossier.
-- `docs/PHASE_0_STATUS_v0.7.md` — concise architecture and status summary.
+- `docs/PHASE_0_STATUS_v0.7.md` — canonical repository summary of the current v0.7 architecture, controls, validation lifecycle, and research frontier.
+
+The full 48-page v0.7 DOCX remains the master research artifact outside GitHub for now. The repository will become the implementation source of truth once code/data-pipeline work begins.
 
 The next research pass focuses on EPS estimate revisions, revision breadth, forecast dispersion, staleness, revision speed, analyst disagreement, and interaction with earnings surprises / PEAD.
