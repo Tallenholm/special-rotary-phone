@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from typing import Iterable
+from zoneinfo import ZoneInfo
+
+
+SEC_TIMEZONE = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -22,12 +26,11 @@ class FilingMetadata:
     def conservative_public_datetime(self) -> datetime:
         """Base Phase-0 rule: acceptance + 5 minutes.
 
-        This is intentionally conservative because SEC guidance says filings are
-        often available on sec.gov roughly 1–3 minutes after acceptance, while
-        no exact first-public-availability timestamp is exposed.
+        SEC guidance says filings are often available on sec.gov roughly 1–3
+        minutes after acceptance, while no exact first-public-availability
+        timestamp is exposed. The lab therefore uses +5 minutes as its default
+        conservative availability rule and tests alternative delays separately.
         """
-        from datetime import timedelta
-
         return self.acceptance_datetime + timedelta(minutes=5)
 
 
@@ -45,13 +48,11 @@ def normalize_items(items: Iterable[str] | None) -> tuple[str, ...]:
 
 
 def parse_sec_acceptance(value: str) -> datetime:
-    """Parse SEC ACCEPTANCE-DATETIME (YYYYMMDDHHMMSS) as US/Eastern-aware later.
+    """Parse SEC ``ACCEPTANCE-DATETIME`` as an America/New_York timestamp.
 
-    EDGAR headers do not carry an offset. We retain an aware UTC object only
-    after the caller supplies/normalizes the correct market timezone context.
-    For raw ingestion this function treats the value as a naive wall-clock and
-    attaches UTC only as a placeholder; production normalization must replace
-    this with America/New_York conversion before return-label construction.
+    EDGAR header timestamps are local Eastern wall-clock timestamps without an
+    explicit offset. ZoneInfo supplies the correct EST/EDT offset for the date,
+    which is essential before aligning a filing with market sessions.
     """
     dt = datetime.strptime(value, "%Y%m%d%H%M%S")
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=SEC_TIMEZONE)
