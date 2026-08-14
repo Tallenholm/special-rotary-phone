@@ -44,7 +44,8 @@ The Analyst Expectations & Earnings Revisions research remains preserved for lat
 
 - `docs/PHASE_0_STATUS_v0.7.md` — canonical repository summary of the v0.7 architecture and controls.
 - `docs/PROJECT_STATUS_2026-08-14.md` — current implementation frontier, data-access decision, and budget posture.
-- `docs/research/ANALYST_EXPECTATIONS_DEEP_DIVE_03_DATA_PATH_AND_FIRST_BACKTEST.md` — parked analyst-data path and minimum backtest specification.
+- `docs/research/ANALYST_EXPECTATIONS_DEEP_DIVE_03_DATA_PATH_AND_FIRST_BACKTEST.md` — analyst experiment and minimum backtest specification.
+- `docs/research/ANALYST_EXPECTATIONS_ACCESS_DECISION_2026-08-14.md` — current decision to park paid PIT analyst-data procurement while preserving the branch.
 - `docs/research/EDGAR_FILINGS_DEEP_DIVE_02_FIRST_BACKTEST.md` — current free-core EDGAR experiment specification.
 
 The full 48-page v0.7 DOCX remains the master Phase-0 research artifact outside GitHub for now. It does not require a v0.8 merely because implementation status or data-access decisions changed.
