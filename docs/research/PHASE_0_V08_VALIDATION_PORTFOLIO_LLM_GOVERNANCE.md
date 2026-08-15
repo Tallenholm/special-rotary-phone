@@ -37,7 +37,7 @@ Dollar-neutral spreads remain valuable because they preserve comparability with 
 
 ### Mandatory reporting
 
-Every long-short anomaly/factor experiment must report, where economically applicable:
+Every long-short anomaly/factor experiment must report both portfolio views by default:
 
 1. **Raw dollar-neutral spread**
    - conventional `1.0 long / 1.0 short` gross-leg construction or the closest predeclared academic replication;
@@ -54,9 +54,11 @@ Every long-short anomaly/factor experiment must report, where economically appli
    - attribute material differences to market-beta asymmetry, volatility asymmetry, sector/size exposure, turnover/cost changes, and financing where measurable;
    - do not relabel systematic exposure as alpha decay or alpha creation.
 
+If a risk-controlled counterpart genuinely cannot be constructed for a specific experiment, the omission must be explicitly documented and justified in the experiment record before results are interpreted. Silent omission is not allowed.
+
 ### Governing rule
 
-**Risk-controlled portfolios supplement the raw academic spread; they do not replace it. Both views are required when structural leg asymmetry could materially affect the conclusion.**
+**Risk-controlled portfolios supplement the raw academic spread; they do not replace it. Both views are the default requirement for long-short anomaly/factor tests. Any exception must be explicit, predeclared where possible, and justified.**
 
 ## 3. LLM governance is tiered by output type and auditability
 
@@ -84,7 +86,7 @@ A blanket prohibition on modern LLMs touching historical filings is too broad. T
 These three refinements supersede the corresponding overly broad recommendations in the original external audit:
 
 - CPCV does **not** replace sealed chronological or prospective evidence.
-- Ex-ante beta/risk control does **not** replace the raw dollar-neutral academic spread; both are reported.
+- Ex-ante beta/risk control does **not** replace the raw dollar-neutral academic spread; both are reported by default, with any exception explicitly justified.
 - Modern LLMs are **not** categorically barred from historical parsing; auditable extraction is allowed, while subjective semantic alpha remains restricted.
 
 They are binding requirements for the v0.8 remediation draft and any implementation built under it.

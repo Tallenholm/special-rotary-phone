@@ -27,6 +27,9 @@ Research-first systematic equities project. No live trading system is authorized
 6. Costs, borrow constraints, delistings, selection bias, financing, and repeated holdout exposure are first-order variables.
 7. Failed hypotheses remain in the Edge Graveyard.
 8. Sealed historical tests are one-use confirmatory evidence per research generation; prospective data outrank recycled holdouts.
+9. CPCV is a development/selection-risk diagnostic, not a substitute for unseen chronological or prospective evidence.
+10. Long-short anomaly/factor tests report both the raw dollar-neutral spread and an ex-ante beta/risk-controlled spread by default; omission requires an explicit documented reason.
+11. Historical LLM use is governed by task type: auditable extraction may be allowed with source grounding, while subjective semantic alpha remains restricted unless point-in-time contamination risk is controlled.
 
 ## Current build focus
 
@@ -48,6 +51,7 @@ The Analyst Expectations & Earnings Revisions research remains preserved for lat
 - `docs/PHASE_0_STATUS_v0.7.md` — v0.7 historical status plus current reopened gate state.
 - `docs/PROJECT_STATUS_2026-08-14.md` — current implementation frontier, data-access decision, budget posture, and red-team gate state.
 - `docs/research/PHASE_0_V07_ADVERSARIAL_AUDIT_2026-08-14.md` — verified red-team findings, rejected overstatements, and v0.8 remediation queue.
+- `docs/research/PHASE_0_V08_VALIDATION_PORTFOLIO_LLM_GOVERNANCE.md` — canonical v0.8 governance rules for validation hierarchy, mandatory dual portfolio reporting, and historical LLM use.
 - `docs/research/ANALYST_EXPECTATIONS_DEEP_DIVE_03_DATA_PATH_AND_FIRST_BACKTEST.md` — analyst experiment and minimum backtest specification.
 - `docs/research/ANALYST_EXPECTATIONS_ACCESS_DECISION_2026-08-14.md` — current decision to park paid PIT analyst-data procurement while preserving the branch.
 - `docs/research/EDGAR_FILINGS_DEEP_DIVE_02_FIRST_BACKTEST.md` — current free-core EDGAR experiment specification.
