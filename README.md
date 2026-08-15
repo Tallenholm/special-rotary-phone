@@ -6,8 +6,9 @@ Research-first systematic equities project. No live trading system is authorized
 
 - **Phase-0 Master Dossier:** v0.7 — Feasibility Closed
 - **Research cutoff:** August 14, 2026
-- **Repository status:** synced to the v0.7 research specification summary
-- **Current research frontier:** Analyst Expectations & Earnings Revisions
+- **Repository status:** Phase-0 research specification closed; research-lab implementation underway
+- **Current implementation frontier:** SEC EDGAR filings + company-reported event alpha
+- **Analyst Expectations branch:** research-ready but historical testing is parked behind legitimate point-in-time analyst-data access
 
 ## Research tracks
 
@@ -26,10 +27,25 @@ Research-first systematic equities project. No live trading system is authorized
 7. Failed hypotheses remain in the Edge Graveyard.
 8. Sealed historical tests are one-use confirmatory evidence per research generation; prospective data outrank recycled holdouts.
 
-## Repository file
+## Current build focus
 
-- `docs/PHASE_0_STATUS_v0.7.md` — canonical repository summary of the current v0.7 architecture, controls, validation lifecycle, and research frontier.
+The lab is implementing the free-core EDGAR path first:
 
-The full 48-page v0.7 DOCX remains the master research artifact outside GitHub for now. The repository will become the implementation source of truth once code/data-pipeline work begins.
+- accession-level SEC ingestion;
+- immutable raw-source storage and hashing;
+- conservative filing-availability timestamps;
+- deterministic 10-K / 10-Q section extraction;
+- year-over-year filing-section delta features;
+- research-grade tests before model complexity expands.
 
-The next research pass focuses on EPS estimate revisions, revision breadth, forecast dispersion, staleness, revision speed, analyst disagreement, and interaction with earnings surprises / PEAD.
+The Analyst Expectations & Earnings Revisions research remains preserved for later A1 testing, but no enterprise analyst-data purchase is authorized at this stage. Fidelity is useful for retail I/B/E/S-derived research views, but it has not been verified as a bulk historical point-in-time revision source suitable for the planned analyst backtest.
+
+## Repository documentation
+
+- `docs/PHASE_0_STATUS_v0.7.md` — canonical repository summary of the v0.7 architecture and controls.
+- `docs/PROJECT_STATUS_2026-08-14.md` — current implementation frontier, data-access decision, and budget posture.
+- `docs/research/ANALYST_EXPECTATIONS_DEEP_DIVE_03_DATA_PATH_AND_FIRST_BACKTEST.md` — analyst experiment and minimum backtest specification.
+- `docs/research/ANALYST_EXPECTATIONS_ACCESS_DECISION_2026-08-14.md` — current decision to park paid PIT analyst-data procurement while preserving the branch.
+- `docs/research/EDGAR_FILINGS_DEEP_DIVE_02_FIRST_BACKTEST.md` — current free-core EDGAR experiment specification.
+
+The full 48-page v0.7 DOCX remains the master Phase-0 research artifact outside GitHub for now. It does not require a v0.8 merely because implementation status or data-access decisions changed.
