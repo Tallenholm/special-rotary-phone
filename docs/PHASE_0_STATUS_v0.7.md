@@ -10,6 +10,10 @@ The verified findings and rejected overstatements are recorded in:
 
 - `docs/research/PHASE_0_V07_ADVERSARIAL_AUDIT_2026-08-14.md`
 
+The canonical v0.8 governance refinements for validation hierarchy, portfolio reporting, and LLM use are recorded in:
+
+- `docs/research/PHASE_0_V08_VALIDATION_PORTFOLIO_LLM_GOVERNANCE.md`
+
 ## Scope
 
 Phase 0 is a research specification, not a live trading system. The objective is to identify statistically credible, executable, retail-relevant equity signals while preventing leakage, survivorship bias, false discovery, short-leg illusion, execution fantasy, point-in-time data errors, and data-lineage failures.
@@ -62,7 +66,13 @@ Existing v0.7 controls remain, with the following additions now mandatory for th
 
 Every signal must report raw and neutralized diagnostics, long and short legs separately, costs before promotion, recent-era and post-publication performance, microcap/liquidity dependence, and sensitivity to restatements/classification choices.
 
-For long-short signals, the conventional raw/dollar-neutral spread remains diagnostically useful, but an ex-ante beta/risk-controlled implementation must also be tested when structural leg asymmetry is economically material.
+For long-short anomaly/factor experiments, dual reporting is the default requirement:
+
+- **Raw dollar-neutral spread** — preserves academic comparability and exposes unconstrained portfolio economics.
+- **Ex-ante beta-neutral / risk-controlled spread** — uses only rebalance-time information to test whether the signal survives risk normalization.
+- **Attribution bridge** — explains material differences between the two using market beta, volatility, sector/size exposure, turnover/costs, and financing where measurable.
+
+If a risk-controlled counterpart cannot be constructed for a specific experiment, the omission must be explicitly documented and justified in the experiment record; it may not be silently omitted.
 
 ## Forecastability / regime gates
 
@@ -74,7 +84,7 @@ Rule 605 and similar public execution-quality statistics are priors, not direct 
 
 ## LLM historical-use boundary
 
-Modern LLMs are not presumed point-in-time clean for historical semantic alpha generation. Historical subjective/semantic LLM features cannot serve as confirmatory evidence unless contamination risk is controlled. Deterministic extraction may be used as an engineering parser only when independently validated against the source text and not permitted to infer future outcomes.
+Modern LLMs are not presumed point-in-time clean for historical semantic alpha generation. Historical subjective/semantic LLM features cannot serve as confirmatory evidence unless contamination risk is controlled. Deterministic extraction may be used as an engineering parser only when independently validated against the source text, source grounding is retained, and the extraction stage is not permitted to infer future outcomes.
 
 ## Current project frontier
 
