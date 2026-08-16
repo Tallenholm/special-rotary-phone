@@ -10,7 +10,7 @@
 
 Build the EDGAR acquisition/provenance layer before expanding into XBRL construction.
 
-The canonical provenance store will use **content-addressed immutable raw objects plus content-addressed immutable acquisition, run, and snapshot records**. A shared append-only JSONL file or mutable database will **not** be the canonical source of truth. JSONL, SQLite, or Parquet may be built later as disposable derived indexes.
+The canonical provenance store uses **content-addressed immutable raw objects plus content-addressed immutable acquisition, run, and snapshot records**. Shared JSONL files and mutable databases are not canonical evidence. JSONL, SQLite, or Parquet may later be generated as disposable indexes.
 
 The design separates:
 
@@ -20,7 +20,7 @@ The design separates:
 4. run-level coverage/failure evidence; and
 5. research source snapshots.
 
-Acquisition history must never be rewritten when parser logic changes.
+Acquisition history is never rewritten when parser logic changes.
 
 ## 2. Goals
 
@@ -28,13 +28,13 @@ The implementation must make it possible to prove:
 
 - exactly which SEC bytes were used;
 - exactly when the collector observed those bytes;
-- exactly which SEC resource produced them;
-- whether that resource is archival, mutable, discovery-only, or unclassified;
-- whether a historical backtest may treat the resource as point-in-time evidence;
+- exactly which HTTP resource produced them;
+- whether the resource is archival, mutable, discovery-only, or unclassified;
+- whether a historical backtest may treat it as point-in-time evidence;
 - which parser/transformation version produced each downstream record;
 - exactly which source observations were frozen into a research dataset;
-- which planned resources failed to ingest rather than silently disappearing; and
-- whether any stored object, record, snapshot, or lineage link has been corrupted or lost.
+- which planned resources failed or retried rather than silently disappearing; and
+- whether any object, record, snapshot, or lineage link has been corrupted or lost.
 
 ## 3. Non-goals
 
@@ -58,7 +58,7 @@ Those remain separate gates.
 SEC resource
     |
     v
-HTTP fetch
+HTTP GET -> final HTTP 200
     |
     +--> immutable raw content object
     |       sha256(decoded HTTP entity body)
@@ -80,7 +80,7 @@ HTTP fetch
 Corpus ingestion run
     |
     +--> immutable RunRecord
-           planned targets + attempts + successes + failures
+           planned targets + ordered attempts + successes + failures
 ```
 
 The acquisition layer owns observation provenance. Parsed filing and document facts belong to downstream immutable records that reference the exact acquisition/content hashes that produced them.
@@ -116,9 +116,7 @@ data/edgar/
 
 ### 5.1 Raw object paths
 
-Raw object paths are generated **only** from a validated SHA-256 digest. SEC filenames, URL basenames, descriptions, `Content-Disposition` filenames, accession text, and other remote strings never determine the filesystem destination.
-
-This prevents path traversal and filename-normalization bugs by construction.
+Raw object paths are generated only from a validated SHA-256 digest. SEC filenames, URL basenames, descriptions, `Content-Disposition` filenames, accession text, and other remote strings never determine filesystem destinations.
 
 ### 5.2 Existing-address behavior
 
@@ -134,9 +132,7 @@ No canonical object or record may be overwritten with different bytes.
 
 `content_sha256` hashes the complete HTTP entity body **after HTTP transfer/content decoding performed by the HTTP client and before any HTML, XBRL, text, Unicode, or parser transformation**.
 
-The bytes hashed are exactly the bytes persisted in the raw object store and later supplied to parsers.
-
-Transport metadata such as `Content-Encoding` is recorded separately.
+The bytes hashed are exactly the bytes persisted in the raw object store and later supplied to parsers. Transport metadata such as `Content-Encoding` is recorded separately.
 
 ## 7. Resource identity
 
@@ -151,11 +147,11 @@ For `resource_key_v1`:
 - preserve path and query string exactly as represented by the final resolved URL; and
 - do not infer CIK, accession, form, or filing metadata into the key.
 
-This key identifies an HTTP resource, not an issuer or filing entity. Parsed filing identity remains downstream.
+The key identifies an HTTP resource, not an issuer or filing entity.
 
 ## 8. AcquisitionRecord
 
-An AcquisitionRecord represents **one successful network observation of a complete response body** and records observation facts only.
+An AcquisitionRecord represents **one successful network observation of a complete HTTP 200 response body** and records observation facts only.
 
 Required conceptual fields:
 
@@ -187,50 +183,60 @@ body_representation
 
 ### 8.1 Collector version
 
-`collector_version` must identify the executable acquisition implementation sufficiently to reproduce behavior, using the package/version identifier plus repository commit SHA when available.
+`collector_version` identifies the acquisition implementation sufficiently to reproduce behavior, using the package/version identifier plus repository commit SHA when available.
 
-### 8.2 Relevant request headers
+### 8.2 Redirect chain
 
-Persist only headers that materially identify the representation request and are safe to retain:
+Each redirect hop is represented in observed order as:
 
-- `User-Agent`;
-- `Accept`; and
-- `Accept-Encoding`.
+```text
+url
+status_code
+location_or_null
+```
 
-Secret/authentication material must never be persisted.
+The final 200 response is represented by `final_url`/`status_code`, not duplicated as a redirect hop.
 
-### 8.3 Conditional GET rule
+### 8.3 Relevant headers
 
-Canonical acquisition v1 does **not** use `If-None-Match` or `If-Modified-Since`.
+Persist only safe representation/provenance headers.
 
-A `304 Not Modified` contains no new response body and therefore cannot create a successful AcquisitionRecord under v1. If encountered, it is recorded as a run-level operational outcome and does not establish a new canonical source observation.
+Request headers:
 
-This avoids falsely treating a bodyless validator response as an independently captured payload. Conditional-validation provenance may be designed later if needed.
+- `user-agent`;
+- `accept`; and
+- `accept-encoding`.
 
-### 8.4 Relevant response headers
+Response headers when present:
 
-Capture when present:
+- `content-type`;
+- `content-encoding`;
+- `content-length`;
+- `etag`;
+- `last-modified`; and
+- `date`.
 
-- `Content-Type`;
-- `Content-Encoding`;
-- `Content-Length`;
-- `ETag`;
-- `Last-Modified`; and
-- `Date`.
+Selected header names are stored lowercase. Values are the HTTP client's normalized field values with leading/trailing optional whitespace removed; internal value content is otherwise preserved. Secret/authentication material is never persisted.
 
-`Date` and `Last-Modified` are source metadata. They do **not** replace collector knowledge time.
+`date` and `last-modified` are source metadata and do not replace collector knowledge time.
 
-### 8.5 Fields explicitly excluded from AcquisitionRecord
+### 8.4 Conditional GET rule
 
-The following are parsed or interpreted facts and do **not** belong to the immutable acquisition record:
+Canonical acquisition v1 does **not** send `If-None-Match` or `If-Modified-Since`.
+
+A `304 Not Modified` contains no new response body and cannot create a successful AcquisitionRecord. If encountered, it is a run-level operational outcome only.
+
+Conditional-validation provenance requires a future reviewed design rather than silently reusing prior bytes.
+
+### 8.5 Fields excluded from AcquisitionRecord
+
+Parsed/interpreted fields do not belong here, including:
 
 - CIK;
 - accession number;
 - form;
-- filing date;
-- report date;
-- acceptance timestamp;
-- conservative public timestamp;
+- filing/report dates;
+- acceptance/public timestamps;
 - amendment flag;
 - primary document;
 - filing items;
@@ -242,21 +248,17 @@ They belong in downstream derived records referencing the acquisition source.
 
 ## 9. Acquisition identity
 
-The canonical AcquisitionRecord JSON is hashed with SHA-256. The resulting digest is the record identity:
+The canonical AcquisitionRecord JSON is hashed with SHA-256. The digest is the record identity:
 
 ```text
 acquisition_record_sha256
 ```
 
-The serialized JSON does **not** include its own digest. The digest is computed externally and used as the storage address.
-
-Two observations of the same response body at different times produce the same `content_sha256` but different acquisition-record hashes because their observation timestamps differ.
+The serialized JSON does not contain its own digest. Two observations of identical body bytes at different times share `content_sha256` but have different acquisition-record hashes because observation timestamps differ.
 
 ## 10. Canonical JSON v1
 
-Canonical provenance records use one project-defined Python JSON encoding contract.
-
-Before serialization, the value tree is validated to contain only:
+Before serialization, provenance data is validated to contain only:
 
 - `dict[str, allowed_value]`;
 - arrays/lists;
@@ -282,104 +284,85 @@ json.dumps(
 Additional schema rules:
 
 - timestamps are pre-normalized to UTC RFC3339 with exactly six fractional digits and trailing `Z`;
-- null values are explicitly present when the schema requires nullable fields;
+- schema-required nullable fields are explicitly present as null;
 - list order is preserved where order is semantic;
 - strings are not silently Unicode-normalized; and
-- any optional filesystem newline is outside the canonical bytes and outside the digest.
+- an optional filesystem newline is outside canonical bytes and outside the digest.
 
-`canonicalizer_version` is mandatory so any future encoding change cannot silently alter identity semantics.
+`canonicalizer_version` is mandatory so future encoding changes cannot silently alter identity semantics.
 
 ## 11. Time semantics
 
-Three timing concepts remain separate.
-
 ### 11.1 Collector knowledge time
 
-`response_completed_at_utc` is the earliest time the collector can claim to have observed the complete stored payload.
+`response_completed_at_utc` is the earliest time the collector may claim to have observed the complete stored payload.
 
-It must:
-
-- be timezone-aware UTC;
-- come from an injectable/testable wall-clock source;
-- never be backdated from filing metadata; and
-- not be replaced by HTTP source headers.
+It must be timezone-aware UTC, come from an injectable/testable wall clock, never be backdated from filing metadata, and never be replaced by HTTP source headers.
 
 ### 11.2 Source-native historical availability
 
-Downstream filing metadata may establish fields such as:
+Downstream filing metadata may establish:
 
 ```text
 acceptance_datetime
 conservative_public_datetime
 ```
 
-These describe the filing's source-native historical timing, not when this collector downloaded it.
+These describe historical SEC availability, not collector acquisition time.
 
 ### 11.3 Derived-feature availability
 
-Later transformations produce their own availability such as `feature_as_of`. They must not inherit an earlier timestamp merely because the raw filing existed earlier.
+Later transformations produce their own `feature_as_of`/availability. A derived feature cannot inherit an earlier timestamp merely because the raw filing existed earlier.
 
 ## 12. No historical backdating
 
-If the collector downloads a 2014 filing in 2026:
+If the collector downloads a 2014 filing in 2026, its `response_completed_at_utc` remains in 2026.
 
-```text
-response_completed_at_utc = 2026-...
-```
+A downstream verified FilingRecord may separately establish that an archived SEC filing was historically public in 2014.
 
-remains true.
-
-A downstream filing record may separately establish that the archived SEC filing was accepted and historically public in 2014.
-
-A revisable API snapshot first captured in 2026 may **not** be projected backward into 2014 unless source-native historical version evidence independently proves the earlier state.
+A mutable API snapshot first captured in 2026 may not be projected backward into 2014.
 
 ## 13. SEC resource policies
 
-Every acquisition receives an explicit versioned policy determined from the resource resolver.
+Every acquisition receives an explicit versioned policy from a deterministic resolver.
 
 ### 13.1 `SEC_ARCHIVED_HISTORICAL_ARTIFACT_V1`
 
 For accession-level archived filing material intended to support historical reconstruction, including original filing HTML/iXBRL and complete submission artifacts.
 
-Historical eligibility may rely on source-native filing/acceptance evidence under the applicable downstream verification rule.
-
-If the same `resource_key` later yields different bytes, retain both observations and raise an `unexpected_content_drift` audit finding. Never overwrite or discard either observation.
+If the same `resource_key` later yields different bytes, retain both and raise `unexpected_content_drift`. Never overwrite or discard either observation.
 
 ### 13.2 `SEC_MUTABLE_SNAPSHOT_V1`
 
-For revisable endpoints whose current representation changes over time.
+For revisable endpoints whose current representation may change. Different payloads across observations are expected version history.
 
-Different payloads across observations are expected version history rather than an automatic conflict.
-
-Absent source-native historical version evidence, a captured representation is eligible only from collector observation time forward.
+Under v1, these resources are eligible only from collector observation time forward.
 
 ### 13.3 `SEC_DISCOVERY_QA_ONLY_V1`
 
-For sources used to locate, reconcile, or QA information but that are insufficient by themselves to establish historical backtest truth.
+For sources used to locate, reconcile, or QA information but insufficient by themselves to establish historical research truth.
 
-Old dates inside the payload do not make the resource historically eligible.
+They may be stored and used for diagnostics but cannot be selected as promotable research source evidence.
 
 ### 13.4 `SEC_UNCLASSIFIED_V1`
 
-For an SEC resource not matched by a supported policy resolver.
+For a resource not matched by a supported resolver.
 
-The bytes may be preserved, but the record is **ineligible for research promotion** until a reviewed policy version explicitly classifies it.
+Bytes may be preserved, but the record is ineligible for research promotion until a reviewed future policy version classifies it.
 
 ### 13.5 Policy resolution
 
-Policy assignment must be deterministic and versioned. Silent caller overrides are forbidden.
-
-A resolver change requires a new policy/resolver version; existing acquisition records are never rewritten.
+Policy assignment is deterministic and versioned. Silent caller overrides are forbidden. Resolver changes create new policy/resolver versions; existing acquisitions are never rewritten.
 
 ## 14. Crash-safe commit protocol
 
 A successful acquisition commits in this order:
 
-1. receive the complete HTTP entity body;
+1. receive the complete HTTP 200 entity body;
 2. compute `content_sha256` and byte size;
 3. write the body to a temporary file on the **same filesystem** as the final object path;
 4. flush and `fsync` the temporary file;
-5. atomically create/rename it at the content-addressed object path without destructive replacement;
+5. atomically create/rename it at the content-addressed path without destructive replacement;
 6. `fsync` the containing directory where supported;
 7. construct and canonicalize the AcquisitionRecord;
 8. compute the acquisition-record SHA-256;
@@ -394,49 +377,40 @@ The successful atomic creation of the final acquisition-record file is the acqui
 
 ### 14.2 Crash invariant
 
-A crash may leave an orphan raw content object, but it must not leave a committed acquisition record referencing absent bytes under the supported durability protocol.
+A crash may leave an orphan raw object, but it must not leave a committed acquisition record referencing absent bytes under the supported durability protocol.
 
 ### 14.3 Platform durability boundary
 
-If a platform cannot provide directory `fsync` semantics, the implementation must:
-
-- document that limitation;
-- preserve same-filesystem atomic rename/create behavior;
-- run recovery/integrity verification on restart; and
-- avoid claiming a stronger power-loss durability guarantee than the platform supports.
+If directory `fsync` is unavailable, the implementation documents the limitation, retains same-filesystem atomic rename/create behavior, verifies integrity on restart, and does not claim stronger power-loss durability than the platform supports.
 
 ## 15. Concurrency model
 
-No shared append file is canonical, so ingestion workers need no global manifest sequence lock.
+No shared append file is canonical, so workers need no global manifest sequence lock.
 
-Independent workers may write different content objects and acquisition records concurrently.
-
-For identical destinations:
-
-- content-addressed writes are idempotent after verification;
-- create-if-absent/atomic-rename semantics prevent destructive replacement; and
-- an existing destination with unexpected bytes is a fatal integrity error.
+Independent workers may write concurrently. Identical destinations are idempotent after verification; destructive replacement is forbidden; unexpected existing bytes are a fatal integrity error.
 
 ## 16. HTTP and transport failure semantics
 
-A successful AcquisitionRecord requires a complete response body with final HTTP status in the configured successful 2xx range.
+Canonical acquisition v1 supports **HTTP GET only** and requires a final **HTTP 200** with a complete body.
 
-These do **not** create a successful AcquisitionRecord:
+These do not create successful AcquisitionRecords:
 
 - timeout;
-- DNS/connection failure;
-- TLS failure;
+- DNS/connection/TLS failure;
 - incomplete/aborted transfer;
+- 204;
+- 206 unless a future range-acquisition design explicitly authorizes it;
 - 304;
-- 404;
-- 429; and
+- 4xx; and
 - 5xx responses.
 
-A 2xx response containing semantically wrong content may still be preserved as an acquisition observation; downstream parsing/validation rejects it as a filing if appropriate.
+Redirects may be followed; only the final HTTP 200 body is committed.
+
+A 200 containing semantically wrong content may still be preserved as an observation. Downstream parsing/validation rejects it as a filing where appropriate.
 
 ## 17. RunRecord and coverage auditing
 
-Every corpus-building run produces one immutable content-addressed RunRecord. Research coverage must never be inferred solely from successful acquisitions.
+Every corpus-building run produces one immutable content-addressed RunRecord. Coverage is never inferred solely from successful acquisitions.
 
 Required conceptual fields:
 
@@ -446,25 +420,24 @@ canonicalizer_version
 collector_version
 run_started_at_utc
 run_completed_at_utc
-
 planned_targets[]
 attempts[]
-
 planned_target_count
 successful_target_count
 failed_target_count
 ```
 
-Each `planned_targets[]` entry contains:
+Each planned target contains only facts knowable before the request:
 
 ```text
 requested_url
-resource_key_or_null
-resource_policy
-resource_policy_version
+planned_policy
+planned_policy_version
 ```
 
-Each `attempts[]` entry contains:
+It does **not** contain final `resource_key`, because that key depends on the final URL after redirects.
+
+Each ordered attempt contains:
 
 ```text
 requested_url
@@ -476,7 +449,7 @@ error_class_or_null
 acquisition_record_sha256_or_null
 ```
 
-Allowed `outcome` values are versioned and include at least:
+Versioned outcomes include at least:
 
 ```text
 success
@@ -486,9 +459,9 @@ incomplete_transfer
 not_modified_304
 ```
 
-The RunRecord's canonical JSON is hashed and stored under `runs/sha256/`. It does not mutate the acquisition store and does not convert a failed request into source evidence.
+The RunRecord canonical JSON is hashed and stored under `runs/sha256/`. Retries appear as multiple ordered attempts so later success cannot erase earlier failure evidence.
 
-Retries are represented as multiple ordered attempt entries, so a terminal success cannot erase earlier failures.
+`planned_policy` is a planning classification based on the requested URL. The committed AcquisitionRecord's actual policy is independently resolved from the final resource identity and is authoritative for source eligibility.
 
 ## 18. Derived FilingRecord
 
@@ -500,7 +473,6 @@ canonicalizer_version
 parser_version
 source_acquisition_sha256
 source_content_sha256
-
 cik
 accession_no
 form
@@ -514,15 +486,13 @@ items[]
 sic_as_filed
 ```
 
-The derived record receives its own deterministic hash.
+The derived record receives its own deterministic hash. Parser v2 may coexist with parser v1; acquisition history is never rewritten.
 
-If parser v2 corrects parser v1, both may coexist. The acquisition record is never rewritten.
-
-The same lineage principle continues through Document, Section, XBRL, and feature records.
+The same lineage rule continues through Document, Section, XBRL, and feature records.
 
 ## 19. SourceSnapshot
 
-A SourceSnapshot freezes the exact immutable source observations selected for a research generation.
+A SourceSnapshot freezes exact immutable source observations for a research generation.
 
 Required conceptual fields:
 
@@ -535,7 +505,6 @@ selection_policy
 selection_policy_version
 eligibility_policy_version
 requested_cutoff
-
 selected_sources[]
 dataset_digest
 ```
@@ -549,36 +518,38 @@ eligibility_basis
 eligible_available_at
 ```
 
-### 19.1 Eligibility basis
+### 19.1 Exact eligibility rules v1
 
-The snapshot supports at least:
+`collector_observation`:
 
-- `collector_observation` — eligibility begins no earlier than collector knowledge time; and
-- `source_native_historical` — eligibility is justified by source-native historical evidence under an archival policy.
+- allowed for `SEC_ARCHIVED_HISTORICAL_ARTIFACT_V1` and `SEC_MUTABLE_SNAPSHOT_V1`;
+- `eligible_available_at = response_completed_at_utc`.
 
-This prevents one universal acquisition-time rule from rejecting legitimate archived filings while also preventing later mutable snapshots from being backdated.
+`source_native_historical`:
+
+- allowed only for `SEC_ARCHIVED_HISTORICAL_ARTIFACT_V1` under v1;
+- requires a derived FilingRecord sourced from the same acquisition/content;
+- requires verified accession/form identity and a valid `conservative_public_datetime`;
+- requires no unresolved `unexpected_content_drift` affecting the chosen logical artifact; and
+- `eligible_available_at = conservative_public_datetime`.
+
+`SEC_MUTABLE_SNAPSHOT_V1` may **not** use `source_native_historical` under v1. A future policy may add that capability only with explicit source-native version-history evidence.
+
+`SEC_DISCOVERY_QA_ONLY_V1` and `SEC_UNCLASSIFIED_V1` cannot be selected into a promotable research SourceSnapshot.
 
 ### 19.2 Dataset digest
 
 `dataset_digest_v1` is the SHA-256 of canonical JSON for the lexicographically sorted list of selected `acquisition_record_sha256` values.
 
-Thus:
-
-- the same exact source observations produce the same dataset digest;
-- eligibility/selection metadata changes the snapshot-record hash but not the underlying source-corpus digest; and
-- changing any selected acquisition identity changes the dataset digest.
-
-The SourceSnapshot document itself receives its own content-addressed record hash.
+Thus the same exact source observations produce the same corpus digest. Eligibility/selection metadata changes the SourceSnapshot record hash but not the underlying source-corpus digest. Changing any selected acquisition identity changes the digest.
 
 ### 19.3 No implicit version selection
 
-The snapshot builder never silently chooses "latest", "first", or "most recent" when multiple observations exist.
-
-Version selection is governed by an explicit versioned rule, and the chosen acquisition identity is recorded.
+The builder never silently chooses "latest", "first", or "most recent" when multiple observations exist. Selection uses an explicit versioned rule and records the chosen acquisition identity.
 
 ## 20. Scope of SourceSnapshot reproducibility
 
-A SourceSnapshot freezes **source evidence only**. It does not by itself reproduce a downstream feature dataset.
+A SourceSnapshot freezes **source evidence only**. It does not reproduce a downstream feature dataset by itself.
 
 Experiment reproducibility additionally pins parser/extractor/transformation versions and, where applicable, derived-record hashes.
 
@@ -588,57 +559,49 @@ SourceSnapshot + transformation lineage = reproducible derived dataset
 
 ## 21. Derived indexes
 
-SQLite, Parquet, JSONL, or other query indexes may be generated later for performance.
+SQLite, Parquet, JSONL, or other query indexes may be generated for performance. They are disposable.
 
-They are disposable. Deleting and rebuilding an index from the canonical immutable store must not alter provenance results.
-
-No experiment may cite an index row as evidence without resolving it back to canonical acquisition/source identities.
+Deleting and rebuilding an index from the immutable canonical store must not alter provenance results. Index rows must resolve back to canonical identities before they can support research evidence.
 
 ## 22. Integrity verifier
 
 Before a SourceSnapshot enters a research experiment, the verifier checks at minimum:
 
-1. acquisition record parses under a supported schema/canonicalizer version;
+1. acquisition record parses under supported schema/canonicalizer versions;
 2. re-canonicalized acquisition bytes hash to the storage address;
 3. referenced raw object exists;
 4. raw object hash equals `content_sha256`;
 5. raw object size equals recorded size;
 6. timestamps satisfy UTC/schema rules;
-7. URLs and `resource_key` satisfy resolver rules;
+7. final URL and `resource_key` satisfy resolver rules;
 8. resource policy/version is recognized;
-9. unclassified resources are rejected for promotion;
+9. unclassified/discovery-only sources are rejected from promotable snapshots;
 10. snapshot references existing acquisitions;
-11. selected-source content hashes match their acquisitions;
+11. selected-source content hashes match acquisitions;
 12. dataset digest recomputes exactly;
-13. eligibility basis is valid for the selected resource policy;
-14. required archived-resource drift findings are resolved or explicitly blocking;
-15. run-level coverage evidence exists when the experiment depends on a planned corpus ingest; and
+13. eligibility basis satisfies Section 19.1;
+14. required archived-resource drift findings are resolved or blocking;
+15. RunRecord coverage evidence exists when the experiment depends on a planned corpus ingest; and
 16. downstream lineage references resolve when downstream records are in scope.
 
 Failure of a required check makes the source dataset **not eligible** for research promotion.
 
 ## 23. Integrity versus authenticity threat model
 
-SHA-256 content addressing and record verification provide integrity and corruption detection within the research environment.
+SHA-256 content addressing and record verification provide integrity/corruption detection inside the research environment.
 
-They do **not** prove authenticity against an adversary able to replace every raw object, provenance record, snapshot, and expected hash consistently.
+They do not prove authenticity against an adversary able to replace every raw object, provenance record, snapshot, and expected hash consistently.
 
-Detached signatures, external hash anchoring, and trusted timestamping remain out of scope. They can be added later without replacing this architecture.
+Detached signatures, external anchoring, and trusted timestamping are out of scope and may be added later without replacing this architecture.
 
 ## 24. Recovery behavior
 
-On startup or explicit verify/repair operations, the implementation may discover:
-
-- orphan raw objects;
-- orphan temporary files;
-- corrupt records;
-- records with missing objects; or
-- unsupported schema versions.
+Startup or explicit verify/repair operations may discover orphan raw objects, orphan temp files, corrupt records, missing objects, or unsupported schemas.
 
 Required behavior:
 
-- orphan temporary files may be removed only after proving they are not committed records;
-- orphan raw objects may be retained or garbage-collected only under an explicit maintenance policy;
+- orphan temp files may be removed only after proving they are uncommitted;
+- orphan raw objects may be retained or garbage-collected only under explicit maintenance policy;
 - corrupt committed records are never silently repaired in place;
 - missing referenced objects invalidate the acquisition; and
 - unsupported schema/canonicalizer versions fail closed for research eligibility.
@@ -647,41 +610,45 @@ Canonical committed evidence is never mutated by automatic repair.
 
 ## 25. Mandatory implementation tests
 
-The implementation PR must add tests covering at least these invariants:
+The implementation PR must add tests covering at least:
 
 | Area | Required test/proof |
 |---|---|
-| Raw CAS | Identical bytes map to one verified content object |
-| Repeat observation | Same bytes at different times produce distinct acquisition observations |
-| Resource key | Equivalent normalized final URLs yield the intended deterministic key |
+| Raw CAS | Identical bytes map to one verified object |
+| Repeat observation | Same bytes at different times produce distinct acquisitions |
+| Resource key | Normalization rule is deterministic and final-URL based |
+| Redirects | Hop order is preserved and final 200 is distinct from redirect chain |
 | Mutable endpoint | Changed payload is retained as normal version history |
-| Archived artifact | Changed payload is retained and flagged for unexpected drift |
-| Unclassified resource | Preserved but rejected for research promotion |
-| Content collision | Existing wrong bytes at addressed path fail hard |
-| Crash before record commit | At worst a harmless orphan payload remains |
-| Crash after record commit | Acquisition and referenced payload verify |
-| Same-filesystem atomicity | Temp/final path strategy enforces same-filesystem operation |
-| Directory durability | Supported-platform directory `fsync` is exercised; unsupported limit is explicit |
-| Concurrency | Parallel writers cannot corrupt or destructively replace canonical records |
-| Canonicalization | Equivalent allowed records produce identical canonical bytes/hashes |
-| Canonical type gate | Floats/non-string keys/unsupported values are rejected |
-| UTC enforcement | Naive or malformed canonical timestamps are rejected |
-| Raw corruption | Modified object bytes are detected |
-| Record corruption | Modified acquisition JSON is detected by recanonicalization/hash |
-| Bad remote filename | Cannot influence filesystem destination |
-| Conditional GET | 304 never creates a body-backed AcquisitionRecord |
-| Mutable PIT rule | Later mutable snapshot cannot pass an earlier historical eligibility cutoff |
-| Archived PIT rule | Source-native archival evidence can retain separate historical timing |
-| Snapshot determinism | Same selected acquisitions yield same dataset digest |
-| Snapshot change | Changed selected acquisition changes dataset digest |
+| Archived artifact | Changed payload retained + unexpected-drift finding |
+| Unclassified | Preserved but rejected for promotion |
+| Discovery-only | Cannot enter promotable SourceSnapshot |
+| Content collision | Wrong bytes at addressed path fail hard |
+| Crash before commit | At worst a harmless orphan payload remains |
+| Crash after commit | Acquisition and payload verify |
+| Same-filesystem atomicity | Temp/final strategy enforces same-filesystem operation |
+| Directory durability | `fsync` behavior/limitation is correctly exercised/documented |
+| Concurrency | Parallel writers cannot corrupt/replace canonical records |
+| Canonical JSON | Exact v1 encoder produces stable bytes/hash |
+| Canonical type gate | Floats/non-string keys/unsupported values rejected |
+| UTC enforcement | Naive/malformed canonical timestamps rejected |
+| Raw corruption | Modified object bytes detected |
+| Record corruption | Modified acquisition JSON detected by recanonicalization/hash |
+| Remote filename | Cannot influence filesystem destination |
+| GET/200 rule | 204/206/304/4xx/5xx never create AcquisitionRecord |
+| Conditional rule | `If-None-Match`/`If-Modified-Since` are not used in canonical v1 |
+| Mutable PIT | Mutable snapshot cannot backdate before collector observation |
+| Archived PIT | Historical eligibility requires same-source FilingRecord + public timestamp + clean drift state |
+| Snapshot determinism | Same selected acquisitions -> same dataset digest |
+| Snapshot change | Changed selected acquisition -> changed digest |
 | Snapshot missing ref | Verification fails closed |
-| Explicit version choice | Multiple observations cannot be selected without a defined rule |
-| Parser upgrade | New derived parser record does not alter acquisition history |
-| HTTP failure | Non-success/transport failure does not create a successful acquisition |
-| Run coverage | Failed/retried targets remain visible in immutable RunRecord |
+| Explicit version choice | Multiple observations require a defined selection rule |
+| Parser upgrade | New derived record does not alter acquisition history |
+| HTTP failure | Transport/error response does not create successful acquisition |
+| Run planning | Planned target does not claim final resource key before fetch |
+| Run retries | Earlier failures remain visible after later success |
 | Regression | All pre-existing EDGAR tests remain passing |
 
-The previously executed EDGAR suite remains a regression requirement; new tests supplement rather than replace existing coverage.
+The previously executed EDGAR suite remains a regression requirement; these tests supplement rather than replace it.
 
 ## 26. Implementation acceptance criteria
 
@@ -691,24 +658,24 @@ This slice may be called **implementation-certified** only when:
 2. every mandatory provenance test above passes;
 3. implementation matches commit/durability semantics without overstating platform guarantees;
 4. immutable observation facts remain separated from parsed filing facts;
-5. resource key, policy, and PIT eligibility rules are deterministic and fail closed;
+5. resource key, policy, and PIT eligibility are deterministic and fail closed;
 6. corruption or missing lineage blocks research eligibility;
 7. run-level failures/retries are auditable;
 8. no canonical store depends on mutable shared JSONL/SQLite state; and
 9. code review finds no unresolved material deviation from this specification.
 
-Passing this gate certifies only the acquisition/provenance implementation. It does not certify XBRL construction, alpha, backtests, prospective performance, or deployment.
+Passing this gate certifies only acquisition/provenance implementation. It does not certify XBRL construction, alpha, backtests, prospective performance, or deployment.
 
 ## 27. Next engineering sequence
 
-After this design is implemented and its tests pass, proceed to:
+After this design is implemented and its tests pass:
 
 1. XBRL context/duration integrity and safe quarter derivation;
 2. specialized issuer accounting schemas/exclusions;
 3. share-class/dimensional share-count handling; and
 4. Item 4.02 non-reliance invalidation state.
 
-Each downstream component must preserve the source and transformation lineage established here.
+Each downstream component preserves the source/transformation lineage established here.
 
 ## 28. Final design disposition
 
@@ -716,23 +683,25 @@ Each downstream component must preserve the source and transformation lineage es
 
 **Implementation status: NOT YET CERTIFIED.**
 
-This specification explicitly resolves the known design weaknesses:
+Resolved design weaknesses include:
 
 - mixed raw/parsed state -> separated immutable layers;
 - canonical JSONL concurrency -> eliminated by content-addressed records;
-- false two-file atomicity -> explicit commit protocol and recovery invariant;
-- incomplete crash durability -> directory durability semantics included;
-- ambiguous canonical hashing -> exact canonical JSON v1 contract;
-- ambiguous logical-resource grouping -> deterministic `resource_key`;
-- conditional 304 ambiguity -> bodyless validation responses cannot masquerade as acquisitions;
-- silent overwrites -> prohibited by content addressing and verification;
+- false two-file atomicity -> explicit commit protocol/recovery invariant;
+- incomplete crash durability -> directory durability boundary;
+- ambiguous canonical hashing -> exact canonical JSON v1;
+- logical-resource ambiguity -> deterministic final-URL `resource_key`;
+- pre-request/final-resource confusion -> RunRecord planning and acquisition identity separated;
+- HTTP success ambiguity -> GET + final 200 only;
+- conditional 304 ambiguity -> bodyless validation cannot masquerade as acquisition;
+- silent overwrite -> prohibited by content addressing/verification;
 - mutable-resource ambiguity -> explicit resource policies;
 - unknown-resource ambiguity -> fail-closed unclassified policy;
-- historical snapshot backdating -> policy-aware PIT eligibility;
+- historical snapshot backdating -> exact policy-aware eligibility rules;
 - path traversal -> remote names never control storage paths;
 - parser revisions -> independent immutable derived records;
 - snapshot nondeterminism -> exact dataset-digest rule;
 - raw snapshot overclaim -> source snapshot separated from transformation reproducibility;
 - silent ingestion failure/retry -> immutable run-level coverage evidence;
 - provenance corruption -> integrity verifier gate; and
-- integrity/authenticity confusion -> threat model explicitly bounded.
+- integrity/authenticity confusion -> bounded threat model.
