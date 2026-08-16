@@ -134,6 +134,14 @@ No canonical object or record may be overwritten with different bytes.
 
 The bytes hashed are exactly the bytes persisted in the raw object store and later supplied to parsers. Transport metadata such as `Content-Encoding` is recorded separately.
 
+For acquisition schema v1, `body_representation` is the literal constant:
+
+```text
+decoded_http_entity_body_v1
+```
+
+A different representation requires a new schema/policy version; it cannot silently reuse this label.
+
 ## 7. Resource identity
 
 Every acquisition contains a deterministic `resource_key` used to group observations of the same logical HTTP resource.
@@ -163,19 +171,15 @@ resource_key
 resource_key_version
 resource_policy
 resource_policy_version
-
 request_started_at_utc
 response_completed_at_utc
-
 requested_url
 final_url
 redirect_chain[]
 http_method
 status_code
-
 request_headers_relevant{}
 response_headers_relevant{}
-
 content_sha256
 size_bytes
 body_representation
@@ -230,19 +234,7 @@ Conditional-validation provenance requires a future reviewed design rather than 
 
 ### 8.5 Fields excluded from AcquisitionRecord
 
-Parsed/interpreted fields do not belong here, including:
-
-- CIK;
-- accession number;
-- form;
-- filing/report dates;
-- acceptance/public timestamps;
-- amendment flag;
-- primary document;
-- filing items;
-- SIC;
-- ticker; and
-- exchange.
+Parsed/interpreted fields do not belong here, including CIK, accession number, form, filing/report dates, acceptance/public timestamps, amendment flag, primary document, filing items, SIC, ticker, and exchange.
 
 They belong in downstream derived records referencing the acquisition source.
 
@@ -360,7 +352,7 @@ A successful acquisition commits in this order:
 
 1. receive the complete HTTP 200 entity body;
 2. compute `content_sha256` and byte size;
-3. write the body to a temporary file on the **same filesystem** as the final object path;
+3. write the body to a temporary file on the same filesystem as the final object path;
 4. flush and `fsync` the temporary file;
 5. atomically create/rename it at the content-addressed path without destructive replacement;
 6. `fsync` the containing directory where supported;
@@ -430,16 +422,21 @@ failed_target_count
 Each planned target contains only facts knowable before the request:
 
 ```text
+target_index
 requested_url
 planned_policy
 planned_policy_version
 ```
 
-It does **not** contain final `resource_key`, because that key depends on the final URL after redirects.
+`target_index` is a zero-based integer unique within the RunRecord and stable for that planned target. It disambiguates retries and duplicate requested URLs.
+
+A planned target does not contain final `resource_key`, because that key depends on the final URL after redirects.
 
 Each ordered attempt contains:
 
 ```text
+target_index
+attempt_index_for_target
 requested_url
 attempt_started_at_utc
 attempt_completed_at_utc
@@ -448,6 +445,8 @@ status_code_or_null
 error_class_or_null
 acquisition_record_sha256_or_null
 ```
+
+`attempt_index_for_target` is zero-based and strictly increasing within each target.
 
 Versioned outcomes include at least:
 
@@ -461,7 +460,13 @@ not_modified_304
 
 The RunRecord canonical JSON is hashed and stored under `runs/sha256/`. Retries appear as multiple ordered attempts so later success cannot erase earlier failure evidence.
 
-`planned_policy` is a planning classification based on the requested URL. The committed AcquisitionRecord's actual policy is independently resolved from the final resource identity and is authoritative for source eligibility.
+Counts are derived by terminal target state, not raw attempt count:
+
+- `planned_target_count = len(planned_targets)`;
+- `successful_target_count` counts targets whose final attempt is `success`;
+- `failed_target_count = planned_target_count - successful_target_count`.
+
+`planned_policy` is a planning classification based on the requested URL. The committed AcquisitionRecord's actual policy is independently resolved from final resource identity and is authoritative for source eligibility.
 
 ## 18. Derived FilingRecord
 
@@ -518,6 +523,14 @@ eligibility_basis
 eligible_available_at
 ```
 
+Every selected source must satisfy:
+
+```text
+eligible_available_at <= requested_cutoff
+```
+
+under the snapshot's versioned eligibility policy. Selection code must not use information with availability after `requested_cutoff` to choose among otherwise eligible versions.
+
 ### 19.1 Exact eligibility rules v1
 
 `collector_observation`:
@@ -533,7 +546,7 @@ eligible_available_at
 - requires no unresolved `unexpected_content_drift` affecting the chosen logical artifact; and
 - `eligible_available_at = conservative_public_datetime`.
 
-`SEC_MUTABLE_SNAPSHOT_V1` may **not** use `source_native_historical` under v1. A future policy may add that capability only with explicit source-native version-history evidence.
+`SEC_MUTABLE_SNAPSHOT_V1` may not use `source_native_historical` under v1. A future policy may add that capability only with explicit source-native version-history evidence.
 
 `SEC_DISCOVERY_QA_ONLY_V1` and `SEC_UNCLASSIFIED_V1` cannot be selected into a promotable research SourceSnapshot.
 
@@ -549,7 +562,7 @@ The builder never silently chooses "latest", "first", or "most recent" when mult
 
 ## 20. Scope of SourceSnapshot reproducibility
 
-A SourceSnapshot freezes **source evidence only**. It does not reproduce a downstream feature dataset by itself.
+A SourceSnapshot freezes source evidence only. It does not reproduce a downstream feature dataset by itself.
 
 Experiment reproducibility additionally pins parser/extractor/transformation versions and, where applicable, derived-record hashes.
 
@@ -572,17 +585,19 @@ Before a SourceSnapshot enters a research experiment, the verifier checks at min
 3. referenced raw object exists;
 4. raw object hash equals `content_sha256`;
 5. raw object size equals recorded size;
-6. timestamps satisfy UTC/schema rules;
-7. final URL and `resource_key` satisfy resolver rules;
-8. resource policy/version is recognized;
-9. unclassified/discovery-only sources are rejected from promotable snapshots;
-10. snapshot references existing acquisitions;
-11. selected-source content hashes match acquisitions;
-12. dataset digest recomputes exactly;
-13. eligibility basis satisfies Section 19.1;
-14. required archived-resource drift findings are resolved or blocking;
-15. RunRecord coverage evidence exists when the experiment depends on a planned corpus ingest; and
-16. downstream lineage references resolve when downstream records are in scope.
+6. `body_representation` is recognized and matches schema expectations;
+7. timestamps satisfy UTC/schema rules;
+8. final URL and `resource_key` satisfy resolver rules;
+9. resource policy/version is recognized;
+10. unclassified/discovery-only sources are rejected from promotable snapshots;
+11. snapshot references existing acquisitions;
+12. selected-source content hashes match acquisitions;
+13. every selected source satisfies `eligible_available_at <= requested_cutoff`;
+14. dataset digest recomputes exactly;
+15. eligibility basis satisfies Section 19.1;
+16. required archived-resource drift findings are resolved or blocking;
+17. RunRecord coverage evidence exists when the experiment depends on a planned corpus ingest; and
+18. downstream lineage references resolve when downstream records are in scope.
 
 Failure of a required check makes the source dataset **not eligible** for research promotion.
 
@@ -615,10 +630,11 @@ The implementation PR must add tests covering at least:
 | Area | Required test/proof |
 |---|---|
 | Raw CAS | Identical bytes map to one verified object |
+| Body representation | Stored bytes/hash match `decoded_http_entity_body_v1` definition |
 | Repeat observation | Same bytes at different times produce distinct acquisitions |
-| Resource key | Normalization rule is deterministic and final-URL based |
-| Redirects | Hop order is preserved and final 200 is distinct from redirect chain |
-| Mutable endpoint | Changed payload is retained as normal version history |
+| Resource key | Normalization is deterministic and final-URL based |
+| Redirects | Hop order preserved; final 200 distinct from redirect chain |
+| Mutable endpoint | Changed payload retained as normal version history |
 | Archived artifact | Changed payload retained + unexpected-drift finding |
 | Unclassified | Preserved but rejected for promotion |
 | Discovery-only | Cannot enter promotable SourceSnapshot |
@@ -626,7 +642,7 @@ The implementation PR must add tests covering at least:
 | Crash before commit | At worst a harmless orphan payload remains |
 | Crash after commit | Acquisition and payload verify |
 | Same-filesystem atomicity | Temp/final strategy enforces same-filesystem operation |
-| Directory durability | `fsync` behavior/limitation is correctly exercised/documented |
+| Directory durability | `fsync` behavior/limitation correctly exercised/documented |
 | Concurrency | Parallel writers cannot corrupt/replace canonical records |
 | Canonical JSON | Exact v1 encoder produces stable bytes/hash |
 | Canonical type gate | Floats/non-string keys/unsupported values rejected |
@@ -635,17 +651,21 @@ The implementation PR must add tests covering at least:
 | Record corruption | Modified acquisition JSON detected by recanonicalization/hash |
 | Remote filename | Cannot influence filesystem destination |
 | GET/200 rule | 204/206/304/4xx/5xx never create AcquisitionRecord |
-| Conditional rule | `If-None-Match`/`If-Modified-Since` are not used in canonical v1 |
+| Conditional rule | `If-None-Match`/`If-Modified-Since` absent from canonical v1 |
 | Mutable PIT | Mutable snapshot cannot backdate before collector observation |
 | Archived PIT | Historical eligibility requires same-source FilingRecord + public timestamp + clean drift state |
+| Snapshot cutoff | No selected source has `eligible_available_at > requested_cutoff` |
+| Snapshot selection leakage | Selection cannot use post-cutoff version information |
 | Snapshot determinism | Same selected acquisitions -> same dataset digest |
 | Snapshot change | Changed selected acquisition -> changed digest |
 | Snapshot missing ref | Verification fails closed |
-| Explicit version choice | Multiple observations require a defined selection rule |
+| Explicit version choice | Multiple observations require defined selection rule |
 | Parser upgrade | New derived record does not alter acquisition history |
 | HTTP failure | Transport/error response does not create successful acquisition |
+| Run target identity | `target_index` disambiguates duplicate requested URLs |
 | Run planning | Planned target does not claim final resource key before fetch |
-| Run retries | Earlier failures remain visible after later success |
+| Run retries | Attempt indices preserve earlier failures after later success |
+| Run counts | Success/failure counts derive from terminal target state |
 | Regression | All pre-existing EDGAR tests remain passing |
 
 The previously executed EDGAR suite remains a regression requirement; these tests supplement rather than replace it.
@@ -660,7 +680,7 @@ This slice may be called **implementation-certified** only when:
 4. immutable observation facts remain separated from parsed filing facts;
 5. resource key, policy, and PIT eligibility are deterministic and fail closed;
 6. corruption or missing lineage blocks research eligibility;
-7. run-level failures/retries are auditable;
+7. run-level failures/retries are auditable and target identity is unambiguous;
 8. no canonical store depends on mutable shared JSONL/SQLite state; and
 9. code review finds no unresolved material deviation from this specification.
 
@@ -689,15 +709,17 @@ Resolved design weaknesses include:
 - canonical JSONL concurrency -> eliminated by content-addressed records;
 - false two-file atomicity -> explicit commit protocol/recovery invariant;
 - incomplete crash durability -> directory durability boundary;
+- ambiguous raw-body semantics -> fixed body representation constant;
 - ambiguous canonical hashing -> exact canonical JSON v1;
 - logical-resource ambiguity -> deterministic final-URL `resource_key`;
 - pre-request/final-resource confusion -> RunRecord planning and acquisition identity separated;
+- duplicate-target/retry ambiguity -> stable target and attempt indices;
 - HTTP success ambiguity -> GET + final 200 only;
 - conditional 304 ambiguity -> bodyless validation cannot masquerade as acquisition;
 - silent overwrite -> prohibited by content addressing/verification;
 - mutable-resource ambiguity -> explicit resource policies;
 - unknown-resource ambiguity -> fail-closed unclassified policy;
-- historical snapshot backdating -> exact policy-aware eligibility rules;
+- historical snapshot backdating -> exact policy-aware eligibility rules and cutoff invariant;
 - path traversal -> remote names never control storage paths;
 - parser revisions -> independent immutable derived records;
 - snapshot nondeterminism -> exact dataset-digest rule;
